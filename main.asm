@@ -1,19 +1,16 @@
 section .data
     lengh dd 0
+    extern _VirtualAlloc@16, _GetFileSize@8
     s db "Program Start",13,10,0 
     sl equ $ - s - 1
     e db 13,10,"Program End",13,10,0
     el equ $ - e - 1
-    newline db 13, 10
     
     qf db "Please enter a file's path or file's name(the path'lengh or the name's lengh cannot above the 1024 bytes): ", 0
     flen equ $ - qf - 1
-    MPEP db "Miss Program Entry Point: Can you look for ':' in your code?", 0
-    Mlen equ $ - MPEP - 1
-    ATM db "Abnormal Termination: Can you look for ';' in your code?", 0
-    Alen equ $ - ATM - 1
     Alloc_Memory equ 0x20000000
 section .bss
+    global hOut, entry_point, exit, Alloc_Memory_Base
     hOut resd 1
     hIn resd 1
     hFile resd 1
@@ -27,6 +24,7 @@ section .text
     extern _ReadConsoleA@20, _ExitProcess@4, _CreateFileA@28, _ReadFile@20, _CloseHandle@4, _GetStdHandle@4, _WriteConsoleA@20
     extern _VirtualAlloc@16, _GetFileSize@8
     extern _Interpreter
+    extern Miss_Program_Entry_Point, Abnormal_Termination, Buffer_Overflow, Dangling_Pointer, Unkown_Error
     _main:
         .init:
             push 0x04
@@ -83,55 +81,64 @@ section .text
 
             push dword [hFile]
             call _CloseHandle@4
-        .Interpreter_Main:
-            xor ebx, ebx
-            push 0
-            push 0  
-            push sl            
-            push s         
-            push dword [hOut]
-            call _WriteConsoleA@20
-            
-            mov al, ':'
-            mov ecx, dword [size]
-            cld
-            repne scasb
-            jne .Miss_Program_Entry_Point
-            dec edi
-            mov dword [entry_point], edi
-            je .call_main
+        .Interpreter_Start:
+            .ready:
+                push 0
+                push 0  
+                push sl            
+                push s         
+                push dword [hOut]
+                call _WriteConsoleA@20
+                xor eax, eax
 
-            mov al, ';'
-            mov ecx, dword [size]
-            cld
-            repne scasb
-            jne .Abnormal_Termination
-            dec edi
-            mov dword [exit], edi
-            je .call_main
+                mov al, ':'
+                mov ecx, dword [size]
+                cld
+                repne scasb
+                mov eax, 1
+                jne .error
+                mov dword [entry_point], edi
+                
+                mov al, ';'
+                mov ecx, dword [size]
+                cld
+                repne scasb
+                mov eax, 2
+                jne .error
+                mov dword [exit], edi
 
-            .call_main:
-                nop
-                jmp .no_error
-        
+                xor eax, eax
+                
+            .main: call _Interpreter
+            test eax, eax
+            je .no_error
+
         .error:
-            .Abnormal_Termination:
-                push 0
-                push 0  
-                push Alen           
-                push ATM
-                push dword [hOut]
-                call _WriteConsoleA@20
+            cmp eax, 1
+            je .m
+            cmp eax, 2
+            je .a
+            cmp eax, 3
+            je .b
+            cmp eax, 4
+            je .d
+            cmp eax, 5
+            je .u
+            jne .pe
+            .a: 
+                call Abnormal_Termination
                 jmp .pe
-            .Miss_Program_Entry_Point:
-                push 0
-                push 0  
-                push Mlen           
-                push MPEP
-                push dword [hOut]
-                call _WriteConsoleA@20
+            .m: 
+                call Miss_Program_Entry_Point
                 jmp .pe
-            .pe:    
+            .b:
+                call Buffer_Overflow
+                jmp .pe
+            .d:
+                call Dangling_Pointer
+                jmp .pe
+            .u: call Unkown_Error
+            .pe:
                 push 0
                 push 0  
                 push el            

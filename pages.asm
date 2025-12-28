@@ -1,75 +1,98 @@
+section .data
+    buffer db 0
 section .text
-    global _Interpreter        
+    global _Interpreter
+    extern _VirtualAlloc@16, _WriteConsoleA@20
+    extern entry_point, exit, hOut
     _Interpreter:
-        cmp byte [esi], '<'
-        je read
-        cmp byte [esi], '!'
-        je force_write
-        cmp byte [esi], '{'
-        je lmov
-        cmp byte [esi], '}'
-        je rmov
-        cmp byte [esi], '+'
-        je increment_buffer
-        cmp byte [esi], '-'
-        je decrement_buffer
-        cmp byte [esi], '.'
-        je output
-        cmp byte [esi], ','
-        je input
-        cmp byte [esi], 0
-        je program_end
-        cmp byte [esi], 13
-        jmp next
-        cmp byte [esi], 10
-        jmp next
-            
-        increment_buffer:
-            inc eax
-            jmp next  
-        decrement_buffer:
-            dec eax
-            jmp next
+        .init:
+            xor ebx, ebx
+            xor edx, edx
+            mov esi, entry_point
 
-        lmov:
-            sub edi, 1
-            jmp next
-        rmov:
-            add edi, 1
-            jmp next
-        
-        read:
-            mov eax, dword [edi]
-            jmp next
-        force_write:
-            mov byte [edi], al
-            jmp next
-
-        output:
-            mov dword [buffer], eax
+            push 0x04
+            push 0x3000
+            push 0x10000000
             push 0
-            push 0  
-            push 4             
-            push buffer         
-            push dword [hOut]
-            call _WriteConsoleA@20
+            call _VirtualAlloc@16
+            test eax, eax
+            je .AMI
+            mov edi, eax
+            .AMI:
+                mov eax, 5
+                jmp .return
 
-            test eax,eax
-            jz Output_Error
-            jmp next
-        input:
-            push 0
-            push 0
-            push 4
-            push buffer
-            push dword [hIn]
-            call _ReadConsoleA@20
-            mov al, byte [buffer]
-            jmp next
+        .main:
+            lea ecx, byte [esi + ebx]
+            cmp ecx, dword [exit]
+            je .return
 
-        next:
-            inc esi
-            jmp _Interpreter
+            cmp byte [esi + ebx], '+'
+            je .increment
+            cmp byte [esi + ebx], '-'
+            je .decrement
+            cmp byte [esi + ebx], '<'
+            je .pointer_move_left
+            cmp byte [esi + ebx], '>'
+            je .pointer_move_right
+            cmp byte [esi + ebx], 'r'
+            je .read
+            cmp byte [esi + ebx], '!'
+            je .force
+            cmp byte [esi + ebx], '.'
+            je .output
+            jne .next
+
+            .increment:
+                cmp dl, 0xFF
+                ja .BO
+                inc byte [buffer]
+                jmp .next
+                .BO:
+                    mov eax, 3
+                    jmp .return
+                
+            .decrement:
+                dec byte [buffer]
+                jmp .next
+
+            .pointer_move_right:
+                cmp edx, 0x30000000
+                ja .DP
+                inc edi
+                inc edx
+                jmp .next
+
+            .pointer_move_left:
+                cmp edx, -1
+                jng .DP
+                dec edi
+                dec edx
+                jmp .next
+            .DP:
+                mov eax, 4
+                jmp .return
+            .read:
+                mov ah, byte [edi]
+                mov byte [buffer], ah
+                jmp .next
+            .force:
+                mov ah, byte [buffer]
+                mov ah, byte [edi]
+                jmp .next
             
-        program_end:
+            .output:
+                push 0
+                push 0
+                push 1
+                push buffer
+                push dword [hOut]
+                call _WriteConsoleA@20
+                jmp .next
             
+            .next:
+                xor eax, eax
+                inc ebx
+                jmp .main
+            .return:
+                ret
